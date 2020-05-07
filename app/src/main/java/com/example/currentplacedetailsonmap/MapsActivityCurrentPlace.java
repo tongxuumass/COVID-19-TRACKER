@@ -1,20 +1,32 @@
 package com.example.currentplacedetailsonmap;
 
 import android.app.Activity;
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothDevice;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.location.Location;
+import android.os.Build;
 import android.os.Bundle;
 
+import android.os.Handler;
 import android.util.Log;
+import android.util.Pair;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
+import android.widget.ArrayAdapter;
 import android.widget.FrameLayout;
+import android.widget.ListView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.RequiresApi;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
@@ -40,8 +52,16 @@ import com.google.android.libraries.places.api.net.FindCurrentPlaceRequest;
 import com.google.android.libraries.places.api.net.FindCurrentPlaceResponse;
 import com.google.android.libraries.places.api.net.PlacesClient;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.Dictionary;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Hashtable;
 import java.util.List;
+import java.util.Set;
 
 /**
  * An activity that displays a map showing the place at the device's current location.
@@ -86,6 +106,33 @@ public class MapsActivityCurrentPlace extends AppCompatActivity
     private List[] mLikelyPlaceAttributions;
     private LatLng[] mLikelyPlaceLatLngs;
 
+    private HashMap<String, Date> deviceSet;
+    private HashMap<String, Date> locationSet;
+
+    private Handler h;
+    private Handler h2;
+    private Runnable r;
+    private Runnable r2;
+
+    private boolean scanning = false;
+
+    private double threshold = 0.0001;
+
+    private int socialDistanceScore;
+    //private HashSet<Pair<String, Date>> deviceSet;
+    //private HashSet<Pair<String, Date>> locationSet;
+
+    /**
+     * Member fields
+     */
+    private BluetoothAdapter mBtAdapter;
+
+    /**
+     * Newly discovered devices
+     */
+    private ArrayList<String> mNewDevicesArrayList;
+
+
     ////////////////////////////////////////////////////////////////////////////////
     //////////// Important Values for your localization and bluetooth //////////////
     ////////////////////////////////////////////////////////////////////////////////
@@ -122,7 +169,111 @@ public class MapsActivityCurrentPlace extends AppCompatActivity
         SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
                 .findFragmentById(R.id.map);
         mapFragment.getMapAsync(this);
+
+        deviceSet = new HashMap<String, Date>();
+        locationSet = new HashMap<String, Date>();
+
+        h = new Handler();
+        h2 = new Handler();
+
+        r = new Runnable(){
+            @RequiresApi(api = Build.VERSION_CODES.P)
+            @Override
+            public void run() {
+                showCurrentPlace();
+                doDiscovery();
+                h.postDelayed(this, 10000);
+            }
+        };
+
+        r2 = new Runnable(){
+            @RequiresApi(api = Build.VERSION_CODES.P)
+            @Override
+            public void run() {
+                Toast toast = Toast.makeText(getApplicationContext(), "It is " + Calendar.getInstance().getTime() + "\nLocations visited: " + locationSet.size() + "\nDevices encountered: " + deviceSet.size(), Toast.LENGTH_SHORT);
+                toast.show();
+                h.postDelayed(this, 20000);
+            }
+        };
+
+        ////////////////////////////////////////////////////////////////////////////
+
+        // Initialize array adapters. One for already paired devices and
+        // one for newly discovered devices
+        ArrayList<String> pairedDevicesArrayList =
+                new ArrayList<String>();
+        mNewDevicesArrayList = new ArrayList<String>();
+
+        // Register for broadcasts when a device is discovered
+        IntentFilter filter = new IntentFilter(BluetoothDevice.ACTION_FOUND);
+        this.registerReceiver(mReceiver, filter);
+
+        // Register for broadcasts when discovery has finished
+        filter = new IntentFilter(BluetoothAdapter.ACTION_DISCOVERY_FINISHED);
+        this.registerReceiver(mReceiver, filter);
+
+        // Get the local Bluetooth adapter
+        mBtAdapter = BluetoothAdapter.getDefaultAdapter();
+
+        // Get a set of currently paired devices
+        Set<BluetoothDevice> pairedDevices = mBtAdapter.getBondedDevices();
+
+        // If there are paired devices, add each one to the ArrayList
+        if (pairedDevices.size() > 0) {
+            for (BluetoothDevice device : pairedDevices) {
+                pairedDevicesArrayList.add(device.getName() + "\n" + device.getAddress());
+            }
+        } else {
+            String noDevices = getResources().getText(R.string.none_paired).toString();
+            pairedDevicesArrayList.add(noDevices);
+        }
     }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+
+        // Make sure we're not doing discovery anymore
+        if (mBtAdapter != null) {
+            mBtAdapter.cancelDiscovery();
+        }
+
+        // Unregister broadcast listeners
+        this.unregisterReceiver(mReceiver);
+    }
+
+    /**
+     * Start device discover with the BluetoothAdapter
+     */
+    @RequiresApi(api = Build.VERSION_CODES.P)
+    public void doDiscovery() {
+        Log.d(TAG, "doDiscovery()");
+
+        // If we're already discovering, stop it
+        if (mBtAdapter.isDiscovering()) {
+            mBtAdapter.cancelDiscovery();
+        }
+
+        mBtAdapter.startDiscovery();
+
+        // Request discover from BluetoothAdapter
+        (new Handler()).postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                mBtAdapter.cancelDiscovery();
+                for (int i = 0; i < mNewDevicesArrayList.size(); i++) {
+                    deviceSet.put(mNewDevicesArrayList.get(i), Calendar.getInstance().getTime());
+
+                }
+                Log.d("DSTORV", "DSTORV");
+
+                //Toast toast = Toast.makeText(getApplicationContext(), "Devices encountered: " + deviceSet.size(), Toast.LENGTH_SHORT);
+                //toast.show();
+            }
+        }, 8000);
+
+    }
+
 
     /**
      * Saves the state of the map when the activity is paused.
@@ -144,7 +295,7 @@ public class MapsActivityCurrentPlace extends AppCompatActivity
      */
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
-        getMenuInflater().inflate(R.menu.current_place_menu, menu);
+        //getMenuInflater().inflate(R.menu.current_place_menu, menu);
         return true;
     }
 
@@ -176,12 +327,25 @@ public class MapsActivityCurrentPlace extends AppCompatActivity
                     //////////////////////   WRITE YOUR CODE HERE ! ////////////////////////////
                     ////////////////////////////////////////////////////////////////////////////
                     // Example:
+                    ArrayList<String> devices = data.getExtras().getStringArrayList(DeviceListActivity.EXTRA_DEVICE_LIST);
                     btDevicesCount = data.getExtras()
                             .getInt(DeviceListActivity.EXTRA_DEVICE_COUNT);
-                    Log.d(TAG, "Device number:" + btDevicesCount);
+                    // Log.d(TAG, "Device number:" + btDevicesCount);
                     // You can change the address to the number of certain type of devices, or
                     // other variables you want to use. Remember to change the corresponding
                     // name at DeviceListActivity.java.
+
+                    for (int i = 0; i < devices.size(); i++) {
+                        deviceSet.put(devices.get(i), Calendar.getInstance().getTime());
+                    }
+                    /*
+                    Toast toast = Toast.makeText(getApplicationContext(), "Device number: " + btDevicesCount, Toast.LENGTH_SHORT);
+                    toast.show();
+                     */
+
+                    //Toast toast = Toast.makeText(getApplicationContext(), "Devices encountered: " + deviceSet.size(), Toast.LENGTH_SHORT);
+                    //toast.show();
+
                 }
                 break;
             case REQUEST_CONNECT_DEVICE_INSECURE:
@@ -327,6 +491,10 @@ public class MapsActivityCurrentPlace extends AppCompatActivity
         updateLocationUI();
     }
 
+    private double distance(double x1, double y1, double x2, double y2) {
+        return Math.sqrt(Math.pow((x2 - x1), 2) + Math.pow((y2 - y1), 2));
+    }
+
     /**
      * Prompts the user to select the current place from a list of likely places, and shows the
      * current place on the map - provided the user has granted location permission.
@@ -383,9 +551,53 @@ public class MapsActivityCurrentPlace extends AppCompatActivity
                             }
                         }
 
+                        getDeviceLocation();
+
+                        threshold *= 5;
+
+                        double x1 = mLastKnownLocation.getLatitude();
+                        double y1 = mLastKnownLocation.getLongitude();
+
+                        for(int j = 0; j < mLikelyPlaceLatLngs.length; j++){
+                            double x2 = mLikelyPlaceLatLngs[j].latitude;
+                            double y2 = mLikelyPlaceLatLngs[j].longitude;
+                            double d = distance(x1, y1, x2, y2);
+                            /*
+                            Toast t = Toast.makeText(getApplicationContext(), Double.toString(d), Toast.LENGTH_SHORT);
+                            t.show();
+                            */
+                            if (d < threshold) {
+                                locationSet.put(mLikelyPlaceNames[j], Calendar.getInstance().getTime());
+
+                                markerLatLng = mLikelyPlaceLatLngs[j];
+                                markerSnippet = mLikelyPlaceAddresses[j];
+                                markerPlaceName = mLikelyPlaceNames[j];
+
+                                if (mLikelyPlaceAttributions[j] != null) {
+                                    markerSnippet = markerSnippet + "\n" + mLikelyPlaceAttributions[j];
+                                }
+
+                                // Add a marker for the selected place, with an info window
+                                // showing information about that place.
+                                mMap.addMarker(new MarkerOptions()
+                                        .title(markerPlaceName)
+                                        .position(markerLatLng)
+                                        .snippet(markerSnippet));
+
+                                // Position the map's camera at the location of the marker.
+                                mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(markerLatLng,
+                                        DEFAULT_ZOOM));
+                            }
+
+
+                        }
+
+                        //Toast t = Toast.makeText(getApplicationContext(), "Public locations visited: " + locationSet.size(), Toast.LENGTH_SHORT);
+                        //t.show();
+
                         // Show a dialog offering the user the list of likely places, and add a
                         // marker at the selected place.
-                        MapsActivityCurrentPlace.this.openPlacesDialog();
+                        // MapsActivityCurrentPlace.this.openPlacesDialog();
                     } else {
                         Log.e(TAG, "Exception: %s", task.getException());
                     }
@@ -394,6 +606,7 @@ public class MapsActivityCurrentPlace extends AppCompatActivity
         } else {
             // The user has not granted permission.
             Log.i(TAG, "The user did not grant location permission.");
+
 
             // Add a default marker, because the user hasn't selected a place.
             mMap.addMarker(new MarkerOptions()
@@ -463,5 +676,61 @@ public class MapsActivityCurrentPlace extends AppCompatActivity
         } catch (SecurityException e) {
             Log.e("Exception: %s", e.getMessage());
         }
+    }
+
+    /**
+     * The BroadcastReceiver that listens for discovered devices and changes the title when
+     * discovery is finished
+     */
+    private final BroadcastReceiver mReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String action = intent.getAction();
+
+            // When discovery finds a device
+            if (BluetoothDevice.ACTION_FOUND.equals(action)) {
+                // Get the BluetoothDevice object from the Intent
+                BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
+                // If it's already paired, skip it, because it's been listed already
+                if (device.getBondState() != BluetoothDevice.BOND_BONDED) {
+                    if (device.getName() != null) {
+                        mNewDevicesArrayList.add(device.getName() + "\n" + device.getAddress());
+                    }
+                }
+                // When discovery is finished, change the Activity title
+            } else if (BluetoothAdapter.ACTION_DISCOVERY_FINISHED.equals(action)) {
+                if (mNewDevicesArrayList.size() == 0) {
+                    String noDevices = getResources().getText(R.string.none_found).toString();
+                    mNewDevicesArrayList.add(noDevices);
+                }
+            }
+        }
+    };
+
+    public void startScan(View view) {
+        if (!scanning) {
+            scanning = true;
+            h.postDelayed(r, 0);
+            h2.postDelayed(r2, 0);
+        }
+
+    }
+
+    public void displayLocations(View view) {
+        String s = "";
+        for (String key: locationSet.keySet()) {
+            s += "Location: " + key + "\nLast Visited: " + locationSet.get(key) + "\n";
+        }
+        Toast toast = Toast.makeText(getApplicationContext(), s, Toast.LENGTH_SHORT);
+        toast.show();
+    }
+
+    public void displayDevices(View view) {
+        String s = "";
+        for (String key: deviceSet.keySet()) {
+            s += "Device: " + key + "\nLast Encountered: " + deviceSet.get(key) + "\n";
+        }
+        Toast toast = Toast.makeText(getApplicationContext(), s, Toast.LENGTH_SHORT);
+        toast.show();
     }
 }

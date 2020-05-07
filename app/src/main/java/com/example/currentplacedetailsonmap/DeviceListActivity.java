@@ -17,6 +17,7 @@ import android.widget.Button;
 import android.widget.ListView;
 import android.widget.TextView;
 
+import java.util.ArrayList;
 import java.util.Set;
 
 /**
@@ -37,6 +38,8 @@ public class DeviceListActivity extends Activity {
      */
     public static String EXTRA_DEVICE_ADDRESS = "device_address";
     public static String EXTRA_DEVICE_COUNT = "device_count";
+
+    public static String EXTRA_DEVICE_LIST = "device_list";
 
     /**
      * Member fields
@@ -170,6 +173,14 @@ public class DeviceListActivity extends Activity {
         // Create the result Intent and include the MAC address
         Intent intent = new Intent();
         // Put anything you want to return here
+
+        ArrayList<String> devices = new ArrayList<String>();
+
+        for (int i = 0; i < mNewDevicesArrayAdapter.getCount(); i++) {
+            devices.add(mNewDevicesArrayAdapter.getItem(i));
+        }
+
+        intent.putStringArrayListExtra(EXTRA_DEVICE_LIST, devices);
         intent.putExtra(EXTRA_DEVICE_COUNT, mNewDevicesArrayAdapter.getCount());
 
         // Set result and finish this Activity
@@ -184,10 +195,13 @@ public class DeviceListActivity extends Activity {
      * device when the corresponding entry is clicked, you can leave this function
      * here, otherwise, delete it !!!!!!!!!!
      */
+
+
     private AdapterView.OnItemClickListener mDeviceClickListener
             = new AdapterView.OnItemClickListener() {
         public void onItemClick(AdapterView<?> av, View v, int arg2, long arg3) {
             // Cancel discovery because it's costly and we're about to connect
+            /*
             mBtAdapter.cancelDiscovery();
 
             // Get the device MAC address, which is the last 17 chars in the View
@@ -201,6 +215,7 @@ public class DeviceListActivity extends Activity {
             // Set result and finish this Activity
             setResult(Activity.RESULT_OK, intent);
             finish();
+             */
         }
     };
 
