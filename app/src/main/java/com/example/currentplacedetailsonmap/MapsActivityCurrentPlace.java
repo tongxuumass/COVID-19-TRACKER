@@ -2,6 +2,7 @@ package com.example.currentplacedetailsonmap;
 
 import android.app.Activity;
 import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothClass;
 import android.bluetooth.BluetoothDevice;
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -20,6 +21,8 @@ import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.widget.ArrayAdapter;
+import android.widget.CheckBox;
+import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.ListView;
 import android.widget.TextView;
@@ -52,6 +55,8 @@ import com.google.android.libraries.places.api.net.FindCurrentPlaceRequest;
 import com.google.android.libraries.places.api.net.FindCurrentPlaceResponse;
 import com.google.android.libraries.places.api.net.PlacesClient;
 
+import java.io.IOException;
+import java.io.OutputStreamWriter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Calendar;
@@ -109,6 +114,8 @@ public class MapsActivityCurrentPlace extends AppCompatActivity
     private HashMap<String, Date> deviceSet;
     private HashMap<String, Date> locationSet;
 
+    private Date start;
+
     private Handler h;
     private Handler h2;
     private Runnable r;
@@ -118,7 +125,13 @@ public class MapsActivityCurrentPlace extends AppCompatActivity
 
     private double threshold = 0.0001;
 
-    private int socialDistanceScore;
+    private EditText e;
+    private CheckBox c;
+
+    private int toastFrequency = 15;
+
+    private boolean whetherFilter = false;
+
     //private HashSet<Pair<String, Date>> deviceSet;
     //private HashSet<Pair<String, Date>> locationSet;
 
@@ -131,7 +144,7 @@ public class MapsActivityCurrentPlace extends AppCompatActivity
      * Newly discovered devices
      */
     private ArrayList<String> mNewDevicesArrayList;
-
+    private ArrayList<Integer> mNewDevicesTypeArrayList;
 
     ////////////////////////////////////////////////////////////////////////////////
     //////////// Important Values for your localization and bluetooth //////////////
@@ -144,6 +157,11 @@ public class MapsActivityCurrentPlace extends AppCompatActivity
     // New Bluetooth Devices Number
     private int btDevicesCount;
     ////////////////////////////////////////////////////////////////////////////////
+
+    private double[] xs;
+    private double[] ys;
+
+    int loop = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -176,6 +194,9 @@ public class MapsActivityCurrentPlace extends AppCompatActivity
         h = new Handler();
         h2 = new Handler();
 
+        // Code from here: https://stackoverflow.com/questions/6242268/repeat-a-task-with-a-time-delay
+        //https://stackoverflow.com/questions/31041884/execute-function-after-5-seconds-in-android
+        //https://stackoverflow.com/questions/35708453/how-to-automatically-click-a-button-in-android-after-a-5-second-delay
         r = new Runnable(){
             @RequiresApi(api = Build.VERSION_CODES.P)
             @Override
@@ -192,9 +213,11 @@ public class MapsActivityCurrentPlace extends AppCompatActivity
             public void run() {
                 Toast toast = Toast.makeText(getApplicationContext(), "It is " + Calendar.getInstance().getTime() + "\nLocations visited: " + locationSet.size() + "\nDevices encountered: " + deviceSet.size(), Toast.LENGTH_SHORT);
                 toast.show();
-                h.postDelayed(this, 20000);
+                h.postDelayed(this, toastFrequency * 1000);
             }
         };
+
+        start = Calendar.getInstance().getTime();
 
         ////////////////////////////////////////////////////////////////////////////
 
@@ -203,6 +226,7 @@ public class MapsActivityCurrentPlace extends AppCompatActivity
         ArrayList<String> pairedDevicesArrayList =
                 new ArrayList<String>();
         mNewDevicesArrayList = new ArrayList<String>();
+        mNewDevicesTypeArrayList = new ArrayList<Integer>();
 
         // Register for broadcasts when a device is discovered
         IntentFilter filter = new IntentFilter(BluetoothDevice.ACTION_FOUND);
@@ -227,6 +251,12 @@ public class MapsActivityCurrentPlace extends AppCompatActivity
             String noDevices = getResources().getText(R.string.none_paired).toString();
             pairedDevicesArrayList.add(noDevices);
         }
+
+        e = (EditText) findViewById(R.id.label_1);
+        c = (CheckBox) findViewById(R.id.check);
+
+        xs = new double[]{42.8025725, 42.8038161, 42.8031402};
+        ys = new double[]{-71.5108842, -71.5133459, -71.5069697};
     }
 
     @Override
@@ -261,16 +291,25 @@ public class MapsActivityCurrentPlace extends AppCompatActivity
             @Override
             public void run() {
                 mBtAdapter.cancelDiscovery();
-                for (int i = 0; i < mNewDevicesArrayList.size(); i++) {
-                    deviceSet.put(mNewDevicesArrayList.get(i), Calendar.getInstance().getTime());
 
+                //Code from here: https://stackoverflow.com/questions/5369682/how-to-get-current-time-and-date-in-android
+                for (int i = 0; i < mNewDevicesArrayList.size(); i++) {
+                    if (whetherFilter) {
+                        if ((mNewDevicesTypeArrayList.get(i) == BluetoothClass.Device.PHONE_UNCATEGORIZED)
+                                || (mNewDevicesTypeArrayList.get(i) == BluetoothClass.Device.PHONE_CELLULAR)
+                                || (mNewDevicesTypeArrayList.get(i) == BluetoothClass.Device.PHONE_SMART)
+                                || (mNewDevicesTypeArrayList.get(i) == BluetoothClass.Device.PHONE_CORDLESS)){
+                            deviceSet.put(mNewDevicesArrayList.get(i), Calendar.getInstance().getTime());
+                        }
+                    } else{
+                        deviceSet.put(mNewDevicesArrayList.get(i), Calendar.getInstance().getTime());
+                    }
                 }
-                Log.d("DSTORV", "DSTORV");
 
                 //Toast toast = Toast.makeText(getApplicationContext(), "Devices encountered: " + deviceSet.size(), Toast.LENGTH_SHORT);
                 //toast.show();
             }
-        }, 8000);
+        }, 7000);
 
     }
 
@@ -335,6 +374,7 @@ public class MapsActivityCurrentPlace extends AppCompatActivity
                     // other variables you want to use. Remember to change the corresponding
                     // name at DeviceListActivity.java.
 
+                    //Code from here: https://stackoverflow.com/questions/5369682/how-to-get-current-time-and-date-in-android
                     for (int i = 0; i < devices.size(); i++) {
                         deviceSet.put(devices.get(i), Calendar.getInstance().getTime());
                     }
@@ -553,19 +593,25 @@ public class MapsActivityCurrentPlace extends AppCompatActivity
 
                         getDeviceLocation();
 
-                        threshold *= 5;
-
                         double x1 = mLastKnownLocation.getLatitude();
                         double y1 = mLastKnownLocation.getLongitude();
 
+                        ///////////////////////////////////////////////////
+                        if (loop > 2) {
+                            loop = 0;
+                        }
+                        x1 = xs[loop];
+                        y1 = ys[loop];
+                        loop += 1;
+                        ///////////////////////////////////////////////////
                         for(int j = 0; j < mLikelyPlaceLatLngs.length; j++){
                             double x2 = mLikelyPlaceLatLngs[j].latitude;
                             double y2 = mLikelyPlaceLatLngs[j].longitude;
                             double d = distance(x1, y1, x2, y2);
-                            /*
-                            Toast t = Toast.makeText(getApplicationContext(), Double.toString(d), Toast.LENGTH_SHORT);
-                            t.show();
-                            */
+
+                            //Toast t = Toast.makeText(getApplicationContext(), Double.toString(x2) + "\n" + Double.toString(y2), Toast.LENGTH_LONG);
+                            //t.show();
+
                             if (d < threshold) {
                                 locationSet.put(mLikelyPlaceNames[j], Calendar.getInstance().getTime());
 
@@ -683,6 +729,7 @@ public class MapsActivityCurrentPlace extends AppCompatActivity
      * discovery is finished
      */
     private final BroadcastReceiver mReceiver = new BroadcastReceiver() {
+        @RequiresApi(api = Build.VERSION_CODES.JELLY_BEAN_MR2)
         @Override
         public void onReceive(Context context, Intent intent) {
             String action = intent.getAction();
@@ -695,42 +742,72 @@ public class MapsActivityCurrentPlace extends AppCompatActivity
                 if (device.getBondState() != BluetoothDevice.BOND_BONDED) {
                     if (device.getName() != null) {
                         mNewDevicesArrayList.add(device.getName() + "\n" + device.getAddress());
+                        mNewDevicesTypeArrayList.add(device.getBluetoothClass().getMajorDeviceClass());
                     }
                 }
                 // When discovery is finished, change the Activity title
             } else if (BluetoothAdapter.ACTION_DISCOVERY_FINISHED.equals(action)) {
+                /*
                 if (mNewDevicesArrayList.size() == 0) {
                     String noDevices = getResources().getText(R.string.none_found).toString();
                     mNewDevicesArrayList.add(noDevices);
                 }
+                */
             }
         }
     };
 
+    // Code from here: https://stackoverflow.com/questions/6242268/repeat-a-task-with-a-time-delay
+    //https://stackoverflow.com/questions/31041884/execute-function-after-5-seconds-in-android
+    //https://stackoverflow.com/questions/35708453/how-to-automatically-click-a-button-in-android-after-a-5-second-delay
     public void startScan(View view) {
         if (!scanning) {
             scanning = true;
+            whetherFilter = c.isChecked();
+
+            String s = e.getText().toString();
+
+            if (s.equals("")) {
+                toastFrequency = 15;
+            } else {
+                toastFrequency = Integer.parseInt(s);
+            }
+
+            Toast toast = Toast.makeText(getApplicationContext(), "Scan started", Toast.LENGTH_SHORT);
+            toast.show();
+
             h.postDelayed(r, 0);
             h2.postDelayed(r2, 0);
         }
 
     }
 
+    //Code from here: https://www.java2novice.com/java-collections-and-util/hashtable/iterate/
+    //https://stackoverflow.com/questions/3871366/how-can-i-loop-thorugth-a-hashtable-keys-in-android
     public void displayLocations(View view) {
-        String s = "";
-        for (String key: locationSet.keySet()) {
-            s += "Location: " + key + "\nLast Visited: " + locationSet.get(key) + "\n";
+        if (locationSet.size() > 0) {
+            String s = "";
+            for (String key: locationSet.keySet()) {
+                s += "Location: " + key + "\nLast Visited: " + locationSet.get(key) + "\n";
+            }
+            Toast toast = Toast.makeText(getApplicationContext(), s, Toast.LENGTH_SHORT);
+            toast.show();
         }
-        Toast toast = Toast.makeText(getApplicationContext(), s, Toast.LENGTH_SHORT);
-        toast.show();
     }
 
+    //Code from here: https://www.java2novice.com/java-collections-and-util/hashtable/iterate/
+    //https://stackoverflow.com/questions/3871366/how-can-i-loop-thorugth-a-hashtable-keys-in-android
     public void displayDevices(View view) {
-        String s = "";
-        for (String key: deviceSet.keySet()) {
-            s += "Device: " + key + "\nLast Encountered: " + deviceSet.get(key) + "\n";
+        if (deviceSet.size() > 0) {
+            String s = "";
+            for (String key: deviceSet.keySet()) {
+                s += "Device: " + key + "\nLast Encountered: " + deviceSet.get(key) + "\n";
+            }
+            //Code from here: http://tutorials.jenkov.com/android/toast.html
+            Toast toast = Toast.makeText(getApplicationContext(), s, Toast.LENGTH_SHORT);
+            toast.show();
         }
-        Toast toast = Toast.makeText(getApplicationContext(), s, Toast.LENGTH_SHORT);
-        toast.show();
-    }
+        }
+
+
 }
