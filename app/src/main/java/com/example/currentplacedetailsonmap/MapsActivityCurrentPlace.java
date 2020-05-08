@@ -597,12 +597,15 @@ public class MapsActivityCurrentPlace extends AppCompatActivity
                         double y1 = mLastKnownLocation.getLongitude();
 
                         ///////////////////////////////////////////////////
+                        //SIMULATION CODE HERE, COMMENT OUT IF ACTUALLY USING APP
+                        /*
                         if (loop > 2) {
                             loop = 0;
                         }
                         x1 = xs[loop];
                         y1 = ys[loop];
                         loop += 1;
+                         */
                         ///////////////////////////////////////////////////
                         for(int j = 0; j < mLikelyPlaceLatLngs.length; j++){
                             double x2 = mLikelyPlaceLatLngs[j].latitude;
