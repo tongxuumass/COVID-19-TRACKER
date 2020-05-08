@@ -1,6 +1,8 @@
 Original code from here:
 https://github.com/miracleyoo/COVID-19-APP/commits/master
 
+(API key in gradle.properties also needs to be updated)
+
 Here's the documentation of my COVID-19 app.
 
 I basically implemented 3 buttons, "START", "LOCATIONS", and "DEVICES", and also added some settings in the form of a CheckBox ("filter phones") and an EditText ("notification frequency").
